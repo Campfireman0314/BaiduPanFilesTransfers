@@ -18,6 +18,7 @@ from src.network import Network
 from src.ui import CustomDialog
 from src.utils import thread_it, write_config, parse_response, normalize_link, parse_url_and_code, update_cookie
 
+import logging
 
 class Operations:
     """
@@ -48,7 +49,7 @@ class Operations:
             self.handle_create_dir(folder_name=self.folder_name)
             self.handle_process_save()
         except Exception as e:
-            self.insert_logs(f'程序出现未预料错误，信息如下：\n{e}\n{traceback.format_exc()}')
+            self.insert_logs(f'程序出现未预料错误，信息如下：\n{e}\n{traceback.format_exc()}', False, 3)
         finally:
             self.network.s.close()
             self.change_status('stopped')
@@ -74,7 +75,7 @@ class Operations:
                 self.setup_share()
                 self.handle_process_share()
         except Exception as e:
-            self.insert_logs(f'程序出现未预料错误，信息如下：\n{e}\n{traceback.format_exc()}')
+            self.insert_logs(f'程序出现未预料错误，信息如下：\n{e}\n{traceback.format_exc()}', False, 3)
         finally:
             self.network.s.close()
             self.change_status('stopped')
@@ -94,6 +95,21 @@ class Operations:
         self.change_status('init')
         write_config(f'{self.cookie}\n{self.folder_name}')
 
+    def prepare_run_ext(self, cookie, folder_name) -> None:
+        """获取变量，准备运行。转存和分享共用逻辑"""
+        # 从用户输入获取变量
+        self.cookie = "".join(cookie.split())
+        self.folder_name = "".join(folder_name.split())
+        self.network.s.trust_env = False
+        self.custom_mode = True
+        self.check_mode = False
+
+        # 更新 cookie、初始化任务总数、更改状态、写入配置文件
+        self.completed_task_count = 0
+        self.network.headers['Cookie'] = self.cookie
+        self.change_status_ext('init')
+        write_config(f'{self.cookie}\n{self.folder_name}')
+
     def setup_save(self) -> None:
         """准备链接，更新状态"""
         # 从文本链接控件获取全部链接，清洗并标准化链接。注意链接后拼接一个空格，是为了后面能统一处理带与不带提取码的链接
@@ -104,6 +120,19 @@ class Operations:
         # 更新任务总数和状态
         self.total_task_count = len(self.link_list)
         self.change_status('running')
+
+    def setup_save_ext(self, extern_link_str) -> None:
+        """准备链接，更新状态
+        **This function is modified for non-window operation. **
+        """
+        # 从文本链接控件获取全部链接，清洗并标准化链接。注意链接后拼接一个空格，是为了后面能统一处理带与不带提取码的链接
+        raw_links = extern_link_str.splitlines()
+        normalized_links = [normalize_link(f'{link} ') for link in raw_links if link]
+        self.link_list = list(dict.fromkeys(normalized_links))
+        self.link_list_org = list(dict.fromkeys(link for link in raw_links if link))
+        # 更新任务总数和状态
+        self.total_task_count = len(self.link_list)
+        self.change_status_ext('running')
 
     def setup_share(self) -> None:
         """准备参数，更新状态"""
@@ -164,13 +193,14 @@ class Operations:
         """执行转存操作并记录结果"""
         # 跳过非网盘链接
         if 'https://pan.baidu.com/' not in url_code:
-            self.insert_logs(f'不支持的链接：{url_code}')
+            self.insert_logs(f'不支持的链接：{url_code}', False, 1)
         else:
             # 执行转存过程，通过简单的循环判断是否要暂停
             self.pause_detection(url_code)
 
         # 处理完毕一个链接，更新状态栏任务计数
-        self.change_status('update')
+        # self.change_status('update')
+        self.change_status_ext('update')
 
     def process_share(self, info: Dict[str, Any]) -> None:
         """执行分享操作并记录结果"""
@@ -220,6 +250,23 @@ class Operations:
             self.root.bottom_save.config(text='批量转存', state="normal", bootstyle='primary', command=lambda: thread_it(self.save, ))
             self.root.bottom_share.config(state="normal")
 
+    def change_status_ext(self, status: str) -> None:
+        """运行状态变化更新函数，脱离窗口运行"""
+        if status == 'init':
+            pass
+        elif status == 'running':
+            self.running = True
+        elif status == 'paused':
+            self.running = False
+        elif status == 'update':
+            self.completed_task_count += 1
+        elif status == 'sharing':
+            pass
+        elif status == 'error':
+            pass
+        else:
+            self.running = False
+
     def check_condition(self, condition: bool, message: str) -> None:
         """
         用户输入或函数返回检查。
@@ -231,20 +278,37 @@ class Operations:
         """
         if condition:
             self.change_status('error')
-            self.insert_logs(message)
+            self.insert_logs(message, False, 1)
             sys.exit()
 
-    def insert_logs(self, message: str, alt: bool = False) -> None:
+    def insert_logs(self, message: str, alt: bool = False, err_level: int = 0) -> None:
         """
         在文本框末尾插入内容
 
         :param message: 插入到日志框的内容
         :param alt: 如果为 True，插入到链接输入框，用于批量分享时记录文件名
         """
-        if alt:
-            self.root.text_links.insert('end', f'{message}\n')
+        if self.root.op is not None:
+            if alt:
+                self.root.text_links.insert('end', f'{message}\n')
+            else:
+                self.root.text_logs.insert('end', f'{message}\n')
         else:
-            self.root.text_logs.insert('end', f'{message}\n')
+            """
+            Robin: Modified version for command use.  
+            """
+            if alt:
+                self.root.text_links.insert('end', f'{message}\n')
+            else:
+                if err_level == 0:
+                    logging.info(f'{message}\n')
+                elif err_level == 1:
+                    logging.warning(f'{message}\n')
+                elif err_level == 2:
+                    logging.error(f'{message}\n')
+                else:
+                    logging.critical(f'{message}\n')
+                # self.root.text_logs.insert('end', f'{message}\n')
 
     def pause_detection(self, url_code: str) -> None:
         """循环检测暂停逻辑，每个转存任务开始时都会检测"""
@@ -289,7 +353,7 @@ class Operations:
         if isinstance(result, list):
             self.insert_logs(f'链接有效：{url_code}')
         else:
-            self.insert_logs(f'链接无效：{url_code} 原因：{ERROR_CODES.get(result, f"错误代码（{result}）")}')
+            self.insert_logs(f'链接无效：{url_code} 原因：{ERROR_CODES.get(result, f"错误代码（{result}）")}', False, 2)
 
     def creat_user_dir(self, folder_name: str) -> str:
         """建立用户指定目录，返回完整路径"""
@@ -316,4 +380,4 @@ class Operations:
             result = self.network.transfer_file(result, folder_name)
 
         # 最后插入转存结果到日志框
-        self.insert_logs(f'{ERROR_CODES.get(result, f"转存失败，错误代码（{result}）")}：{url_code}')
+        self.insert_logs(f'{ERROR_CODES.get(result, f"转存失败，错误代码（{result}）")}：{url_code}', False, 2)

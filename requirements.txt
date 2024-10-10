@@ -4,3 +4,5 @@ ttkbootstrap>=1.10.1
 
 pyinstaller>=6.6.0
 pytest~=8.2.0
+bypy~=1.8.5
+flask~=3.0.3

@@ -28,10 +28,10 @@ class MainWindow(ttk.Window):
         """初始化 UI 元素"""
         super().__init__()
         self.op = op
-        self.icon_path = create_icon()
-        self._setup_window()
-        self._create_widgets()
-        self._init_config()
+        # self.icon_path = create_icon()
+        # self._setup_window()
+        # self._create_widgets()
+        # self._init_config()
 
     def _setup_window(self) -> None:
         """主窗口配置"""

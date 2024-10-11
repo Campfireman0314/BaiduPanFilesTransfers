@@ -18,7 +18,38 @@ from src.network import Network
 from src.ui import CustomDialog
 from src.utils import thread_it, write_config, parse_response, normalize_link, parse_url_and_code, update_cookie
 
+import re
 import logging
+
+def transform_text_between_tags(input_string):
+    pattern = r'\[popotag\].*?"text":"(.*?)".*?\[/popotag\]'
+    match = re.search(pattern, input_string)
+    if match:
+        extracted_text = match.group(1)
+        return re.sub(r'\[popotag\].*?\[/popotag\]', extracted_text, input_string)
+    else:
+        return input_string
+
+def transform_link(input_text):
+    """
+    Link reformatter.
+    """
+    output = []
+    for line in input_text:
+        line = transform_text_between_tags(line)
+        print(line)
+        # Remove "链接:" if present
+        input_string = line.replace("链接:", "")
+
+        # Check if the input string contains "?pwd="
+        start_index = input_string.find("提取码:") + len("提取码:")
+        end_index = len(input_string)
+        if "?pwd=" in input_string:
+            output.append(input_string[:start_index - len("提取码:")])
+        else:
+            code_value = input_string[start_index:end_index]
+            output.append(input_string[:start_index - len("提取码:")] + "?" + "pwd=" + code_value)
+    return output
 
 class Operations:
     """
@@ -121,18 +152,23 @@ class Operations:
         self.total_task_count = len(self.link_list)
         self.change_status('running')
 
-    def setup_save_ext(self, extern_link_str) -> None:
+    def setup_save_ext(self, extern_link_str: str) -> bool:
         """准备链接，更新状态
         **This function is modified for non-window operation. **
         """
         # 从文本链接控件获取全部链接，清洗并标准化链接。注意链接后拼接一个空格，是为了后面能统一处理带与不带提取码的链接
+
         raw_links = extern_link_str.splitlines()
+        raw_links = transform_link(raw_links)
+        if len(raw_links) == 0:
+            return False
         normalized_links = [normalize_link(f'{link} ') for link in raw_links if link]
         self.link_list = list(dict.fromkeys(normalized_links))
         self.link_list_org = list(dict.fromkeys(link for link in raw_links if link))
         # 更新任务总数和状态
         self.total_task_count = len(self.link_list)
         self.change_status_ext('running')
+        return True
 
     def setup_share(self) -> None:
         """准备参数，更新状态"""
@@ -277,7 +313,7 @@ class Operations:
         :param message: 插入到日志框的内容
         """
         if condition:
-            self.change_status('error')
+            self.change_status_ext('error')
             self.insert_logs(message, False, 1)
             sys.exit()
 

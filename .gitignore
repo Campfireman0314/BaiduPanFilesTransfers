@@ -10,3 +10,4 @@ dist
 /BaiduPanFilesTransfers
 .pytest_cache
 .venv
+.vscode

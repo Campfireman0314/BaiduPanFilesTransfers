@@ -9,3 +9,4 @@ dist
 /test.py
 /BaiduPanFilesTransfers
 .pytest_cache
+.venv

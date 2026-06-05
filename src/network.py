@@ -14,6 +14,13 @@ from retrying import retry
 from src.constants import HEADERS, BASE_URL
 
 
+def normalize_remote_path(path: str) -> str:
+    path = (path or '').strip()
+    if not path or path == '/':
+        return '/'
+    return f'/{path.strip("/")}'
+
+
 class Network:
     """
     网络请求相关类。
@@ -63,6 +70,7 @@ class Network:
         :param folder_name: 指定要获取列表的目录名
         :return: 获取成功时返回文件列表，获取失败时返回错误代码
         """
+        folder_name = normalize_remote_path(folder_name)
         url = f'{BASE_URL}/api/list'
         params = {
             'order': 'time',
@@ -90,6 +98,7 @@ class Network:
         :param folder_name: 指定要建立的目录名
         :return: 获取请求返回的代码，成功时返回 0
         """
+        folder_name = normalize_remote_path(folder_name)
         url = f'{BASE_URL}/api/create'
         params = {
             'a': 'commit',
@@ -163,6 +172,7 @@ class Network:
         :param folder_name: 转存目标目录
         :return: 返回转存请求结果代码
         """
+        folder_name = normalize_remote_path(folder_name)
         url = f'{BASE_URL}/share/transfer'
         params = {
             # shareid 是文件 id
@@ -178,7 +188,7 @@ class Network:
             # 针对一个分享链接带有多个分享文件的情况，转换一下列表格式
             'fsidlist': f"[{','.join(params_list[2])}]",
             # 目标目录为空，则直接等于根目录 '/'
-            'path': f'/{folder_name}'
+            'path': folder_name
         }
 
         r = self.s.post(url=url, params=params, headers=self.headers, data=data, timeout=15, allow_redirects=False, verify=False)

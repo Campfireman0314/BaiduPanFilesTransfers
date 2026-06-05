@@ -5,6 +5,7 @@
 import pytest
 
 from src.utils import *
+from src.operations import transform_link
 
 
 @pytest.mark.parametrize("url_code, expected", [
@@ -91,3 +92,23 @@ def test_parse_response(response, expected):
 ])
 def test_update_cookie(bdclnd, cookie, expected):
     assert update_cookie(bdclnd, cookie) == expected
+
+
+@pytest.mark.parametrize("input_text, expected", [
+    (
+        """通过网盘分享的文件：20260604 REC.zip
+链接: https://pan.baidu.com/s/1rXtr9UbfE4n5odD30rCHqQ?pwd=rbiy 提取码: rbiy
+--来自百度网盘超级会员v8的分享""",
+        ["https://pan.baidu.com/s/1rXtr9UbfE4n5odD30rCHqQ?pwd=rbiy"]
+    ),
+    (
+        "通过网盘分享的文件：20260604REC.zip\n链接:https://pan.baidu.com/s/1rXtr9UbfE4n5odD30rCHqQ?pwd=rbiy提取码:rbiy--来自百度网盘超级会员v8的分享",
+        ["https://pan.baidu.com/s/1rXtr9UbfE4n5odD30rCHqQ?pwd=rbiy"]
+    ),
+    (
+        "链接：https://pan.baidu.com/s/1rXtr9UbfE4n5odD30rCHqQ 提取码：rbiy",
+        ["https://pan.baidu.com/s/1rXtr9UbfE4n5odD30rCHqQ?pwd=rbiy"]
+    ),
+])
+def test_transform_link_extracts_baidu_share_from_noisy_text(input_text, expected):
+    assert transform_link(input_text.splitlines()) == expected

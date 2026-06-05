@@ -21,6 +21,18 @@ from src.utils import thread_it, write_config, parse_response, normalize_link, p
 import re
 import logging
 
+BAIDU_LINK_REGEX = re.compile(
+    r'(https?://pan\.baidu\.com/(?:s/1[A-Za-z0-9_-]+|e/[A-Za-z0-9_-]+|share/init\?surl=[A-Za-z0-9_-]+))'
+    r'(?:[?&]pwd=([A-Za-z0-9]{4}))?',
+    re.IGNORECASE
+)
+PASS_CODE_REGEX = re.compile(
+    r'(?:提取码|提取|密码|pwd)\s*[:：]?\s*([A-Za-z0-9]{4})(?![A-Za-z0-9])',
+    re.IGNORECASE
+)
+BARE_PASS_CODE_REGEX = re.compile(r'^\s*[:：,，;；-]*\s*([A-Za-z0-9]{4})(?![A-Za-z0-9])')
+
+
 def transform_text_between_tags(input_string):
     pattern = r'\[popotag\].*?"text":"(.*?)".*?\[/popotag\]'
     match = re.search(pattern, input_string)
@@ -35,23 +47,22 @@ def transform_link(input_text):
     Link reformatter. 
     """
     output = []
-    for line in input_text:
-        line = transform_text_between_tags(line)
-        print(line)
-        # Remove "链接:" if present
-        input_string = line.replace("链接：", "")
+    input_string = '\n'.join(transform_text_between_tags(line).strip() for line in input_text)
+    matches = list(BAIDU_LINK_REGEX.finditer(input_string))
 
-        # Check if the input string contains "?pwd="
-        start_index = input_string.find("提取码：") + len("提取码：")
-        end_index = len(input_string)
-        if "?pwd=" in input_string:
-            if "提取码：" in input_string:
-                output.append(input_string[:start_index - len("提取码：")])
-            else:
-                output.append(input_string)
-        else:
-            code_value = input_string[start_index:end_index]
-            output.append(input_string[:start_index - len("提取码：")] + "?" + "pwd=" + code_value)
+    for index, match in enumerate(matches):
+        url = match.group(1)
+        code = match.group(2) or ''
+        next_start = matches[index + 1].start() if index + 1 < len(matches) else len(input_string)
+        trailing_text = input_string[match.end():next_start]
+
+        if not code:
+            code_match = PASS_CODE_REGEX.search(trailing_text[:80])
+            if not code_match:
+                code_match = BARE_PASS_CODE_REGEX.search(trailing_text[:16])
+            code = code_match.group(1) if code_match else ''
+
+        output.append(f'{url}?pwd={code}' if code else url)
     return output
 
 class Operations:
@@ -125,6 +136,7 @@ class Operations:
 
         # 更新 cookie、初始化任务总数、更改状态、写入配置文件
         self.completed_task_count = 0
+        self.failed_task_count = 0
         self.network.headers['Cookie'] = self.cookie
         self.change_status('init')
         write_config(f'{self.cookie}\n{self.folder_name}')
@@ -140,6 +152,7 @@ class Operations:
 
         # 更新 cookie、初始化任务总数、更改状态、写入配置文件
         self.completed_task_count = 0
+        self.failed_task_count = 0
         self.network.headers['Cookie'] = self.cookie
         self.change_status_ext('init')
         write_config(f'{self.cookie}\n{self.folder_name}')
@@ -213,7 +226,7 @@ class Operations:
         """新建目录。如果目录已存在则不新建，否则会建立一个带时间戳的空目录"""
         result = self.network.get_dir_list(f'/{folder_name}')
         # 如果 result 为错误代码数字，代表目标目录不存在
-        if self.folder_name and isinstance(result, int):
+        if folder_name and isinstance(result, int):
             return_code = self.network.create_dir(folder_name)
             self.check_condition(return_code != 0,
                                  message=f'创建目录失败，错误代码：{return_code}')
@@ -420,3 +433,5 @@ class Operations:
 
         # 最后插入转存结果到日志框
         self.insert_logs(f'{ERROR_CODES.get(result, f"转存失败，错误代码（{result}）")}：{url_code}', False, 2)
+        if isinstance(result, int) and result != 0:
+            self.failed_task_count += 1
